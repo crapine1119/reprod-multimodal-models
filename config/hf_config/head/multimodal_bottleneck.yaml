@@ -1,0 +1,5 @@
+_target_: module.model.head.linear.SimpleLinear
+# bottleneck token * embedding dim
+in_features: 1024
+# label
+out_features: 8

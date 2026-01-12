@@ -80,9 +80,9 @@ class MultimodalPreTrainedModel(PreTrainedModel):
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         # vision
-        pixel_values: Optional[torch.Tensor] = None,
+        pixel_values_videos: Optional[torch.Tensor] = None,
         # audio
-        input_values: Optional[torch.Tensor] = None,
+        input_features: Optional[torch.Tensor] = None,
         audio_attention_mask: Optional[torch.Tensor] = None,
         # labels
         labels: Optional[torch.Tensor] = None,
@@ -103,24 +103,20 @@ class MultimodalPreTrainedModel(PreTrainedModel):
                 x["text_mask"] = attention_mask
 
         if "vision" in self.modalities:
-            if pixel_values is None:
+            if pixel_values_videos is None:
                 raise ValueError("pixel_values is required because 'vision' modality is enabled.")
-            x["vision"] = pixel_values
+            x["vision"] = pixel_values_videos
 
         if "audio" in self.modalities:
-            if input_values is None:
+            if input_features is None:
                 raise ValueError("input_values is required because 'audio' modality is enabled.")
-            x["audio"] = input_values
+            x["audio"] = input_features
             if audio_attention_mask is not None:
                 x["audio_mask"] = audio_attention_mask
 
         logits = self._forward_multimodal_dict(x)
 
         loss: Optional[torch.Tensor] = None
-        if labels is not None:
-            loss_func = self.config.loss
-            loss = loss_func(logits.squeeze(), labels)
-
         if not return_dict:
             if loss is None:
                 return (logits,)

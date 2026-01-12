@@ -1,5 +1,4 @@
 import json
-import math
 import os
 from dataclasses import dataclass
 from glob import glob
@@ -9,10 +8,9 @@ from typing import Any, Dict, List, Optional
 import fsspec
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
-from torchcodec.decoders import AudioDecoder
-from torchvision.io import read_video
-from torchvision.transforms import Resize
+from torchcodec.decoders import AudioDecoder, VideoDecoder
 
 LabelIndexMap: dict[str, int] = {
     "null": 0,
@@ -166,24 +164,96 @@ class AIHubMultimodalDataset(Dataset, FileManangementMixin):
                 idx.append(SampleIndex(chunk=ch, video_path=vp, label_path=label_path, key=key))
         return idx
 
-    def _load_video(self, video_path: str, *, start_sec: float, end_sec: float) -> tuple[torch.Tensor, dict[str, Any]]:
-        v, _a, info = read_video(
-            video_path, output_format="TCHW", pts_unit="sec", start_pts=float(start_sec), end_pts=float(end_sec)
-        )
-        # resize
-        t, _, h, w = v.size()
-        h_pad, w_pad = int(h * self._video_resize_rate), int(w * self._video_resize_rate)
-        v = Resize(size=(h_pad, w_pad))(v)
+    # def _load_video(self, video_path: str, *, start_sec: float, end_sec: float) -> tuple[torch.Tensor, dict[str, Any]]:
+    #     v, _a, info = read_video(
+    #         video_path, output_format="TCHW", pts_unit="sec", start_pts=float(start_sec), end_pts=float(end_sec)
+    #     )
+    #     # resize
+    #     t, _, h, w = v.size()
+    #     h_pad, w_pad = int(h * self._video_resize_rate), int(w * self._video_resize_rate)
+    #     v = Resize(size=(h_pad, w_pad))(v)
+    #
+    #     # temporal sampling
+    #     if t < self._target_frames:
+    #         v_pad = torch.zeros(size=(self._target_frames, 3, h_pad, w_pad), dtype=v.dtype)
+    #         v_pad[:t] = v
+    #         return v_pad, info
+    #     else:
+    #         temporal_indices = torch.arange(0, t, t / self._target_frames).int()
+    #         v_sampled = [v[i] for i in temporal_indices]
+    #         return v_sampled, info
 
-        # temporal sampling
-        if t < self._target_frames:
-            v_pad = torch.zeros(size=(self._target_frames, 3, h_pad, w_pad), dtype=v.dtype)
-            v_pad[:t] = v
-            return v_pad, info
+    def _load_video(self, video_path: str, *, start_sec: float, end_sec: float) -> tuple[torch.Tensor, dict[str, Any]]:
+        """
+        Returns:
+            v: (T, C, H, W) float32 tensor (0~1 범위로 정규화)
+            info: 메타데이터 dict
+        """
+        # TorchCodec 권장: VideoDecoder 사용 :contentReference[oaicite:1]{index=1}
+        decoder = VideoDecoder(
+            video_path,
+            dimension_order="NCHW",  # (N, C, H, W) :contentReference[oaicite:2]{index=2}
+            device="cpu",
+            num_ffmpeg_threads=1,
+            seek_mode="exact",
+        )
+        md = decoder.metadata
+
+        # 시간 범위 보정
+        start = float(max(0.0, start_sec))
+        stop = float(end_sec)
+        if md.duration_seconds is not None:
+            stop = min(stop, float(md.duration_seconds))
+
+        # 기존 코드처럼 target_frames로 시간 균등 샘플링:
+        # TorchCodec의 time 기반 API로 원하는 프레임만 바로 가져옵니다. :contentReference[oaicite:3]{index=3}
+        n = int(self._target_frames)
+        if n <= 0:
+            raise ValueError(f"_target_frames must be > 0, got {self._target_frames}")
+
+        if n == 1:
+            ts = torch.tensor([start], dtype=torch.float64)
         else:
-            temporal_indices = torch.arange(0, t, t / self._target_frames).int()
-            v_sampled = [v[i] for i in temporal_indices]
-            return v_sampled, info
+            span = max(stop - start, 1e-6)
+            step = span / n  # half-open [start, stop) 느낌으로
+            ts = start + step * torch.arange(n, dtype=torch.float64)
+            ts = torch.clamp(ts, max=stop - 1e-6)
+
+        frame_batch = decoder.get_frames_played_at(ts)  # FrameBatch :contentReference[oaicite:4]{index=4}
+        v = frame_batch.data  # (T, C, H, W)
+
+        # resize (torchvision.transforms.Resize 대신 interpolate로 명확하게 처리)
+        t, c, h, w = v.shape
+        h_pad = int(h * self._video_resize_rate)
+        w_pad = int(w * self._video_resize_rate)
+        if (h_pad, w_pad) != (h, w):
+            v = F.interpolate(v, size=(h_pad, w_pad), mode="bilinear", align_corners=False)
+
+        # 혹시라도 디코더가 예상보다 적게 반환한 경우 패딩(방어 코드)
+        if t < n:
+            v_pad = torch.zeros(size=(n, c, h_pad, w_pad), dtype=v.dtype)
+            v_pad[:t] = v
+            v = v_pad
+        elif t > n:
+            # 방어적으로 target_frames로 맞춤(보통은 발생하지 않습니다)
+            idx = torch.linspace(0, t - 1, steps=n).round().long()
+            v = v.index_select(0, idx)
+
+        info: dict[str, Any] = {
+            "video_fps": md.average_fps,
+            "video_path": video_path,
+            "start_sec": start,
+            "end_sec": stop,
+            "num_frames_total": md.num_frames,
+            "duration_seconds": md.duration_seconds,
+            "width": md.width,
+            "height": md.height,
+            "codec": md.codec,
+            # 실제로 뽑힌 프레임들의 시간 정보
+            "pts_seconds": frame_batch.pts_seconds,
+            "frame_duration_seconds": frame_batch.duration_seconds,
+        }
+        return v, info
 
     def _load_audio(self, video_path: str, *, start_sec: float, end_sec: float) -> torch.Tensor:
         """
@@ -259,7 +329,7 @@ class AIHubMultimodalDataset(Dataset, FileManangementMixin):
             "videos": v,  # raw frames (T,H,W,C) uint8
             "audio": a,  # waveform (L, ) float32
             "text": text,  # optional
-            "label": label,  # optional
+            "labels": label,  # optional
             "metadata": {
                 **video_meta,
                 **audio_meta,

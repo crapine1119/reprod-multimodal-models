@@ -1,4 +1,8 @@
-project_root: ${hydra:runtime.cwd}
+defaults:
+  - hf_config: base
+  - module: lit_module
+  - datamodule: lit_datamodule
+  - _self_
 
 hydra:
   run:
@@ -6,17 +10,14 @@ hydra:
   job:
     chdir: false
 
-defaults:
-  - hf_config: base
-  - module: lit_module
-  - datamodule: lit_datamodule
-  - _self_
-
+project_root: ${hydra:runtime.cwd}
 seed: 42
 
+logger:
+  _target_: lightning.pytorch.loggers.TensorBoardLogger
+  save_dir: ${hydra:run.dir}
+
 callbacks:
-  - _target_: lightning.pytorch.loggers.TensorBoardLogger
-    save_dir: ${hydra:run.dir}/logger/tb
   - _target_: lightning.pytorch.callbacks.EarlyStopping
     monitor: valid/loss
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
@@ -27,13 +28,17 @@ callbacks:
     save_top_k: 3
     save_last: true
     every_n_epochs: 1
+  - _target_: lightning.pytorch.callbacks.LearningRateMonitor
+    logging_interval: epoch
 
 trainer:
-  max_epochs: 10
+  _target_: lightning.Trainer
+  max_epochs: 20
   accelerator: mps
   devices: 1
-  precision: b16-mixed
+  precision: bf16-mixed
   log_every_n_steps: 10
   enable_checkpointing: true
   default_root_dir: ${hydra:run.dir}
+  logger: ${..logger}
   callbacks: ${..callbacks}

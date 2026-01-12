@@ -1,10 +1,10 @@
 import logging
 
 import hydra
-import lightning.pytorch as pl
+
 import torch
 from hydra.utils import instantiate
-from lightning import LightningModule, LightningDataModule
+from lightning import LightningModule, LightningDataModule, seed_everything, Trainer
 from omegaconf import DictConfig, OmegaConf
 
 logging.basicConfig(level=logging.INFO)
@@ -14,16 +14,16 @@ log = logging.getLogger(__name__)
 @hydra.main(config_path="config", config_name="base", version_base=None)
 def main(cfg: DictConfig) -> None:
     log.info(OmegaConf.to_yaml(cfg))
-    pl.seed_everything(int(cfg.seed), workers=True)
+    seed_everything(int(cfg.seed), workers=True)
 
     # Load & Update Huggingface config to use in hydra style
     module = load_module(cfg)
     datamodule = load_datamodule(cfg)
     trainer = instantiate(cfg.trainer)
 
-    _debug_batch(datamodule)
+    # _debug_batch(datamodule)
 
-    trainer.fit(module=module, datamodule=datamodule)
+    trainer.fit(model=module, datamodule=datamodule)
 
     # trainer.validate(module=module, datamodule=datamodule)
     log.info("Training finished!")
@@ -44,7 +44,7 @@ def load_module(cfg: DictConfig) -> LightningModule:
 
     partial_model = instantiate(cfg.module.model)
     model = partial_model(config=partial_config(**hf_config))
-
+    log.info(f"Current Model:\n{model}")
     partial_module = instantiate(cfg.module)
     module = partial_module(model=model)
     return module

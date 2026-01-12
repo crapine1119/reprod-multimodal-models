@@ -6,7 +6,7 @@ from module.model.encoders.common.block import SimpleCNN1DBlock
 
 
 class SimpleCNN1DEncoder(BaseEncoder):
-    modality = "any"
+    modality = "vision"
 
     def __init__(self, in_features: int, out_features: int, n_layers: int = 3):
         super().__init__()

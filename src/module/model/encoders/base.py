@@ -3,7 +3,7 @@ from typing import ClassVar, Literal, Optional
 import torch
 from torch import nn
 
-ModalityName = Literal["vision", "audio", "text", "any"]
+ModalityName = Literal["vision", "audio", "text"]
 
 
 class BaseEncoder(nn.Module):

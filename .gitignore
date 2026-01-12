@@ -210,3 +210,7 @@ __marimo__/
 output/
 outputs/
 debug/
+
+# asset
+*.mp4
+*.MP4

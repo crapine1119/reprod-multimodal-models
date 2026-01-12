@@ -1,1 +1,3 @@
-_target_: module.model.fusion.concat.SimpleConcat
+_target_: module.model.fusion.concat.SimpleTimeConcat
+sequence_length: 16
+out_features: 256

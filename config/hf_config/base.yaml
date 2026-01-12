@@ -4,9 +4,8 @@ defaults:
   - encoders/vision: simple_cnn1d
   - encoders/audio: simple_cnn1d
   - encoders/text: eeve2_8
-  - fusion: concat
-  - head: linear
-  - loss: mse
+  - fusion: multimodal_bottleneck # concat
+  - head: multimodal_bottleneck # linear
   - _self_
 
 model_type: multimodal_interview

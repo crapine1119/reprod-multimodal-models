@@ -85,10 +85,10 @@ class SimpleMultimodalProcessor(BaseMultimodalProcessor):
                     v = v.squeeze()
 
                 collated[k].append(v)
-            collated["label"].append(b["label"])
+            collated["labels"].append(b["labels"])
 
         list_columns = ["video_grid_thw", "text"]
-        long_columns = ["label"]
+        long_columns = ["labels"]
 
         out = {}
         for k, v in collated.items():

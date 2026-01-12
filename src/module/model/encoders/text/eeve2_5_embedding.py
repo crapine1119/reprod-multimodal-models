@@ -19,6 +19,6 @@ class EEVEEmbedddingEncoder(BaseEncoder):
         return model.embed_tokens
 
     def forward(self, input_ids: torch.Tensor, **kwargs) -> torch.Tensor:
-        out = self.embedding(input_ids)
+        out = self.embed_tokens(input_ids)
         out = self.layers(out)
         return out

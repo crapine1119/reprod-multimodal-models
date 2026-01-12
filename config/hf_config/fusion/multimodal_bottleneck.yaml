@@ -1,0 +1,30 @@
+_target_: module.model.fusion.multimodal_bottleneck.MultimodalBottleneckFusion
+
+rope_config_dict:
+    vision:
+      rope_theta: 10000.0
+      hidden_size: 256
+      num_attention_heads: 4
+      rope_factor: 8.0
+    audio:
+      rope_theta: 10000.0
+      hidden_size: 256
+      num_attention_heads: 4
+      rope_factor: 4.0
+    text:
+      rope_theta: 10000.0
+      hidden_size: 256
+      num_attention_heads: 4
+      rope_factor: 1.0
+
+embed_dim: 256
+num_layers: 6
+num_heads: 4
+num_bottleneck_tokens: 4
+position_embedding_type: rope
+bottleneck_start_index: 2
+bottleneck_pos_policy: zeros
+gate_activation: sigmoid
+
+# output shape: B, (num_bottleneck_tokens * embed_dim)
+bottleneck_out_policy: last
